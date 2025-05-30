@@ -267,9 +267,10 @@ def create_dataset(destination_folder, size, *inputs):
     return destination_folder
 
 
-def run_captioning(images, concept_sentence, *captions):
+def run_captioning(images, concept_sentence, system_prompt, *captions):
     print(f"run_captioning")
     print(f"concept sentence {concept_sentence}")
+    print(f"system_prompt {system_prompt}")
     print(f"captions {captions}")
     #Load internally to not consume resources for training
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -286,7 +287,12 @@ def run_captioning(images, concept_sentence, *captions):
         if isinstance(image_path, str):  # If image is a file path
             image = Image.open(image_path).convert("RGB")
 
-        prompt = "<DETAILED_CAPTION>"
+        # Use system prompt if provided, otherwise use default detailed caption
+        if system_prompt and system_prompt.strip():
+            prompt = system_prompt.strip()
+        else:
+            prompt = "<DETAILED_CAPTION>"
+        
         inputs = processor(text=prompt, images=image, return_tensors="pt").to(device, torch_dtype)
         print(f"inputs {inputs}")
 
@@ -297,11 +303,33 @@ def run_captioning(images, concept_sentence, *captions):
 
         generated_text = processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
         print(f"generated_text: {generated_text}")
-        parsed_answer = processor.post_process_generation(
-            generated_text, task=prompt, image_size=(image.width, image.height)
-        )
-        print(f"parsed_answer = {parsed_answer}")
-        caption_text = parsed_answer["<DETAILED_CAPTION>"].replace("The image shows ", "")
+        
+        # Handle parsing based on prompt type
+        if prompt == "<DETAILED_CAPTION>":
+            parsed_answer = processor.post_process_generation(
+                generated_text, task=prompt, image_size=(image.width, image.height)
+            )
+            print(f"parsed_answer = {parsed_answer}")
+            caption_text = parsed_answer["<DETAILED_CAPTION>"].replace("The image shows ", "")
+        else:
+            # For custom prompts, extract the response differently
+            try:
+                parsed_answer = processor.post_process_generation(
+                    generated_text, task=prompt, image_size=(image.width, image.height)
+                )
+                # Try to get the response from the parsed answer
+                if prompt in parsed_answer:
+                    caption_text = parsed_answer[prompt]
+                else:
+                    # Fallback: extract text after the prompt
+                    caption_text = generated_text.split(prompt)[-1].strip()
+                    # Clean up special tokens
+                    caption_text = caption_text.replace('<|endoftext|>', '').replace('<|end|>', '').strip()
+            except:
+                # If parsing fails, extract text manually
+                caption_text = generated_text.split(prompt)[-1].strip()
+                caption_text = caption_text.replace('<|endoftext|>', '').replace('<|end|>', '').strip()
+        
         print(f"caption_text = {caption_text}, concept_sentence={concept_sentence}")
         if concept_sentence:
             caption_text = f"{concept_sentence} {caption_text}"
@@ -945,6 +973,12 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
                             scale=1,
                         )
                     with gr.Group(visible=False) as captioning_area:
+                        system_prompt = gr.Textbox(
+                            label="System Prompt (Optional)", 
+                            placeholder="Enter custom prompt for caption generation (e.g., '<MORE_DETAILED_CAPTION>', 'Describe this image in detail', etc.). Leave empty for default detailed captions.",
+                            lines=2,
+                            interactive=True
+                        )
                         do_captioning = gr.Button("Add AI captions with Florence-2")
                         output_components.append(captioning_area)
                         #output_components = [captioning_area]
@@ -1111,7 +1145,7 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
         ],
         outputs=terminal,
     )
-    do_captioning.click(fn=run_captioning, inputs=[images, concept_sentence] + caption_list, outputs=caption_list)
+    do_captioning.click(fn=run_captioning, inputs=[images, concept_sentence, system_prompt] + caption_list, outputs=caption_list)
     demo.load(fn=loaded, js=js, outputs=[hf_token, hf_login, hf_logout, repo_owner])
     refresh.click(update, inputs=listeners, outputs=[train_script, train_config, dataset_folder])
 if __name__ == "__main__":
