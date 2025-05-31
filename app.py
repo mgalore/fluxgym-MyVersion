@@ -1,7 +1,7 @@
 import os
 import sys
 os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-os.environ['GRADIO_ANALYTICS_ENABLED'] = '0'
+# os.environ['GRADIO_ANALYTICS_ENABLED'] = '0'  # Temporarily disabled - might interfere with sharing
 sys.path.insert(0, os.getcwd())
 sys.path.append(os.path.join(os.path.dirname(__file__), 'sd-scripts'))
 import subprocess
@@ -1150,6 +1150,4 @@ with gr.Blocks(elem_id="app", theme=theme, css=css, fill_width=True) as demo:
     refresh.click(update, inputs=listeners, outputs=[train_script, train_config, dataset_folder])
 if __name__ == "__main__":
     cwd = os.path.dirname(os.path.abspath(__file__))
-    print("🚀 Starting FluxGym with public sharing enabled...")
-    print("📡 Generating public Gradio link...")
-    demo.launch(debug=True, show_error=True, allowed_paths=[cwd], share=True, server_name="0.0.0.0", server_port=7860)
+    demo.launch(show_error=True, allowed_paths=[cwd], share=True)
